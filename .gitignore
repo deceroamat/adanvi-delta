@@ -1,0 +1,42 @@
+# Secretos — .env lleva la contrasena de Postgres. Se versiona .env.example.
+.env
+.env.*
+!.env.example
+
+# Entorno Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Cache de herramientas
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Datos y exportaciones locales
+*.csv
+!tests/**/*.csv
+pgdata/
+*.dump
+*.sql.gz
+
+# Backups (el respaldo real vive fuera del repo, en ~/backups/adanvi)
+/backups/
+*.backup
+*.manifest
+*.sha256
+
+# Logs
+*.log
+
+# Editor / SO
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# NOTA: uv.lock SI se versiona (build reproducible), igual que
+# src/static/vendor/ (uPlot esta vendorizado a proposito, sin CDN).

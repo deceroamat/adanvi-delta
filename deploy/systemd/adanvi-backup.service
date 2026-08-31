@@ -1,0 +1,22 @@
+[Unit]
+Description=Backup diario de la base ADANVI (pg_dump con adanvi_ro, solo lectura)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Corre como root porque necesita el socket de Docker (pg_dump se ejecuta
+# dentro del contenedor db). El script deja los dumps propiedad de emolog.
+ExecStart=/home/emolog/adanvi/scripts/backup_database.sh
+TimeoutStartSec=30min
+# Minimo impacto en produccion: prioridad baja de CPU y de I/O.
+Nice=10
+IOSchedulingClass=idle
+# Endurecimiento compatible con el acceso a Docker.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/emolog/backups/adanvi
+
+[Install]
+WantedBy=multi-user.target

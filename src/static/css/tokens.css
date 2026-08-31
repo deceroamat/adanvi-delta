@@ -1,0 +1,117 @@
+/* Sistema visual ADANVI — dark industrial. Sin tema claro en v1. */
+
+:root {
+  /* Superficies */
+  --page-plane: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #202020;
+  --surface-3: #282827;
+
+  /* Texto */
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+
+  /* Lineas */
+  --gridline: #2c2c2a;
+  --baseline: #383835;
+  --border-hairline: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  /* Estado. Se acompanan SIEMPRE de texto o forma: en una pantalla de planta
+     con reflejos y con operarios daltonicos, el color solo no basta. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+  --status-unknown: #55534d;
+
+  /* Banda de perdida de datos sobre el area de trazo */
+  --gap-fill: rgba(208, 59, 59, 0.14);
+  --gap-edge: rgba(208, 59, 59, 0.55);
+
+  /* Acento */
+  --accent: #3987e5;
+  --accent-soft: rgba(57, 135, 229, 0.16);
+
+  /* Tipografia densa: cabe mas informacion sin apretar la lectura */
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+
+  /* Alturas fijas del armazon */
+  --h-topbar: 44px;
+  --h-toolbar: 40px;
+  --h-row: 28px;
+  /* Objetivo tactil minimo: la app se usa con guantes en paneles touch */
+  --h-control: 32px;
+
+  --radius: 4px;
+  --radius-lg: 6px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  height: 100dvh;
+  /* La pagina NUNCA scrollea: solo scrollean contenedores internos. Es lo que
+     garantiza que el grafico siempre ocupe el alto disponible. */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--page-plane);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Todos los numeros en tabular para que no bailen al actualizarse en vivo */
+.num,
+input[type="number"],
+td.num,
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--page-plane);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--baseline);
+}

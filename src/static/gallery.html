@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tendencia · ADANVI</title>
+    <link rel="stylesheet" href="/static/css/tokens.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+    <link rel="stylesheet" href="/static/vendor/uplot/uPlot.min.css" />
+    <link rel="stylesheet" href="/static/css/gallery.css" />
+  </head>
+  <body>
+    <header class="topbar"></header>
+
+    <div class="gallery-shell">
+      <div class="toolbar">
+        <button id="btn-live" data-live="1" title="Volver a seguir el reloj (Inicio)">
+          <span class="dot ok"></span>
+          <!-- Las dos etiquetas van apiladas en la misma celda (gallery.css) para
+               que el boton mida siempre lo mismo. Si cambiara de ancho al salir de
+               LIVE, la flecha '‹' se movería de debajo del cursor justo cuando se
+               la está pulsando en serie. -->
+          <span class="live-label">
+            <span data-when="live">LIVE</span>
+            <span data-when="paused">IR A LIVE</span>
+          </span>
+        </button>
+
+        <span class="sep"></span>
+
+        <button class="icon" id="btn-back" title="Retroceder media ventana (← · Shift+← una ventana entera)">‹</button>
+        <input id="window-input" value="1h" title="Ancho de ventana: 30s, 15m, 1h, 1d, 2w, 1M" />
+        <button class="icon" id="btn-fwd" title="Avanzar media ventana (→ · Shift+→ una ventana entera)">›</button>
+
+        <div class="presets" id="presets"></div>
+
+        <span class="sep"></span>
+
+        <button id="btn-range" title="Ir a una fecha concreta">📅 Rango</button>
+        <button class="icon" id="btn-reset" title="Restablecer zoom (doble clic en el gráfico)">⟲</button>
+        <button id="btn-csv" title="Descargar la ventana visible en CSV">⇩ CSV</button>
+
+        <span class="spacer"></span>
+        <span class="resolution" id="resolution" title="Resolución de los datos mostrados"></span>
+        <h1 id="gallery-title" style="font-size: var(--fs-md); margin: 0 0 0 var(--sp-3)"></h1>
+      </div>
+
+      <div class="range-popover" id="range-popover" hidden>
+        <label class="field">Desde <input type="datetime-local" id="range-from" /></label>
+        <label class="field">Hasta <input type="datetime-local" id="range-to" /></label>
+        <div class="row">
+          <button id="range-cancel" class="ghost">Cancelar</button>
+          <button id="range-apply" class="primary">Aplicar</button>
+        </div>
+      </div>
+
+      <div class="chart-area">
+        <div class="chart-wrap" id="chart">
+          <div class="chart-empty">Cargando…</div>
+        </div>
+        <!-- Lectura del crosshair. Viaja con el cursor para no obligar a bajar
+             la vista a la tabla; se autolimita en número de series y nunca
+             recibe eventos de puntero, para no estorbar al arrastre. -->
+        <div class="cursor-readout" id="cursor-readout" hidden>
+          <div class="time" data-readout-time></div>
+          <ul class="items" data-readout-items></ul>
+          <div class="more" data-readout-more hidden></div>
+        </div>
+      </div>
+
+      <div class="resize-handle" id="resize-handle" title="Arrastra para redimensionar · clic para plegar (T)"></div>
+
+      <div class="table-wrap" id="table-wrap">
+        <div class="collapsed-strip" id="collapsed-strip"></div>
+        <div id="series-table"></div>
+      </div>
+    </div>
+
+    <script src="/static/vendor/uplot/uPlot.iife.min.js"></script>
+    <script type="module" src="/static/js/gallery-view.js"></script>
+  </body>
+</html>

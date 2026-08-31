@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Galerías · ADANVI</title>
+    <link rel="stylesheet" href="/static/css/tokens.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar"></header>
+
+    <main class="page">
+      <div class="page-narrow">
+        <h1>Galerías de tendencias</h1>
+        <p class="subtitle">
+          Cada galería agrupa las variables de una zona o línea. La configuración de
+          sus series se guarda en la base de datos.
+        </p>
+
+        <form class="form-row" id="gallery-form">
+          <div class="field">
+            <label for="g-name">Nueva galería</label>
+            <input id="g-name" name="name" placeholder="Zona de secado" required style="width: 240px" />
+          </div>
+          <button class="primary" type="submit">Crear</button>
+        </form>
+
+        <div id="galleries-host"></div>
+      </div>
+    </main>
+
+    <script type="module" src="/static/js/galleries.js"></script>
+  </body>
+</html>

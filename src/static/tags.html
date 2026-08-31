@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tags · ADANVI</title>
+    <link rel="stylesheet" href="/static/css/tokens.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar"></header>
+
+    <main class="page">
+      <div class="page-narrow">
+        <h1>Tags</h1>
+        <p class="subtitle">
+          Lo que el worker registra de forma continua. Es la única fuente de verdad:
+          no hay archivos de configuración.
+        </p>
+
+        <form class="form-row" id="tag-form">
+          <div class="field">
+            <label for="f-name">Nombre CIP</label>
+            <input id="f-name" name="name" placeholder="Temp_Zona1" required style="width: 220px" />
+          </div>
+          <div class="field">
+            <label for="f-label">Etiqueta</label>
+            <input id="f-label" name="label" placeholder="Temperatura zona 1" style="width: 200px" />
+          </div>
+          <div class="field">
+            <label for="f-unit">Unidad</label>
+            <input id="f-unit" name="unit" placeholder="°C" style="width: 80px" />
+          </div>
+          <div class="field">
+            <label for="f-decimals">Dec.</label>
+            <input id="f-decimals" name="decimals" type="number" min="0" max="6" value="2" style="width: 64px" />
+          </div>
+          <div class="field">
+            <label for="f-kind">Tipo</label>
+            <select id="f-kind" name="kind">
+              <option value="analog">Analógico</option>
+              <option value="digital">Digital</option>
+              <option value="counter">Contador</option>
+            </select>
+          </div>
+          <button class="primary" type="submit">Agregar tag</button>
+        </form>
+
+        <div id="tags-host"></div>
+      </div>
+    </main>
+
+    <script type="module" src="/static/js/tags.js"></script>
+  </body>
+</html>

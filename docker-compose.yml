@@ -1,0 +1,39 @@
+services:
+  db:
+    # Version fijada: en un historiador industrial la reproducibilidad del
+    # despliegue vale mas que estar en la ultima.
+    image: timescale/timescaledb:2.29.1-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${TZ:-America/Bogota}
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    volumes:
+      - tsdata:/var/lib/postgresql/data
+      - ./db/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    ports:
+      - "127.0.0.1:5430:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    shm_size: 512mb
+
+  adanvi:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports:
+      - "${HTTP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  tsdata:

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ADANVI by emolog</title>
+    <link rel="stylesheet" href="/static/css/tokens.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar"></header>
+
+    <main class="page">
+      <div class="page-narrow">
+        <h1>ADANVI</h1>
+        <p class="subtitle">
+          Historiador de tendencias para PLC Allen-Bradley — <em>by emolog</em>
+        </p>
+
+        <div class="cards">
+          <a class="card" href="/galleries">
+            <h3>Galerías de tendencias</h3>
+            <p>Ver el comportamiento histórico de los procesos, en vivo y hacia atrás.</p>
+          </a>
+          <a class="card" href="/tags">
+            <h3>Administrar tags</h3>
+            <p>Definir qué variables del PLC se registran de forma continua.</p>
+          </a>
+        </div>
+
+        <h2>Estado de adquisición</h2>
+        <div class="cards" id="health-cards"></div>
+      </div>
+    </main>
+
+    <script type="module" src="/static/js/home.js"></script>
+  </body>
+</html>

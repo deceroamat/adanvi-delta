@@ -1,0 +1,410 @@
+/* Vista de galeria: la pantalla principal del producto.
+   Regla de oro: todo el espacio sobrante es del grafico. */
+
+.gallery-shell {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* sin esto, un hijo con scroll desborda el flex */
+}
+
+/* --- Toolbar --------------------------------------------------------- */
+
+.toolbar {
+  flex: 0 0 var(--h-toolbar);
+  height: var(--h-toolbar);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-hairline);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+.toolbar .sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border-hairline);
+  flex: 0 0 auto;
+}
+.toolbar .spacer {
+  margin-left: auto;
+}
+
+/* El unico control de modo temporal: o sigue al reloj o no. */
+#btn-live {
+  gap: var(--sp-2);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  flex: 0 0 auto;
+}
+#btn-live[data-live="1"] {
+  background: rgba(12, 163, 12, 0.18);
+  border-color: var(--status-good);
+  color: #7ede7e;
+}
+#btn-live[data-live="0"] {
+  color: var(--text-muted);
+}
+#btn-live .dot {
+  width: 8px;
+  height: 8px;
+}
+
+/* Ambas etiquetas ocupan la misma celda de grid, asi que el boton mide siempre
+   lo que la mas larga ("IR A LIVE") y la barra no se recoloca al cambiar de
+   estado. Se alterna con visibility y no con display para que la que se oculta
+   siga reservando su sitio. */
+.live-label {
+  display: grid;
+  justify-items: center;
+}
+.live-label > span {
+  grid-area: 1 / 1;
+}
+#btn-live[data-live="1"] [data-when="paused"],
+#btn-live[data-live="0"] [data-when="live"] {
+  visibility: hidden;
+}
+
+#window-input {
+  width: 74px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.presets {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.presets button {
+  height: 26px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+.presets button:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.presets button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  border-color: var(--border-hairline);
+}
+
+.resolution {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding: 0 var(--sp-2);
+}
+.resolution b {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.resolution.loading b::after {
+  content: "…";
+}
+
+.range-popover {
+  position: absolute;
+  top: calc(var(--h-topbar) + var(--h-toolbar));
+  right: var(--sp-3);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.6);
+}
+.range-popover[hidden] {
+  display: none;
+}
+.range-popover .row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* --- Grafico --------------------------------------------------------- */
+
+/* El area es quien toma el espacio sobrante; el wrapper se posiciona dentro de
+   ella para que el chart pueda vaciar su propio innerHTML sin borrar el resto. */
+.chart-area {
+  flex: 1 1 auto;
+  min-height: 200px;
+  position: relative;
+}
+.chart-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--page-plane);
+}
+.chart-wrap .uplot,
+.chart-wrap .u-wrap {
+  width: 100% !important;
+}
+.chart-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+}
+
+/* Lectura del crosshair. `left`/`top` los escribe gallery-view.js en cada
+   frame; el volteo se hace con transform para no recalcular la caja. */
+.cursor-readout {
+  position: absolute;
+  z-index: 5;
+  max-width: 260px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius);
+  background: rgba(26, 26, 25, 0.94);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  /* Nunca debe recibir el puntero: se dibuja justo encima del área de arrastre. */
+  pointer-events: none;
+}
+.cursor-readout[hidden] {
+  display: none;
+}
+/* Cerca del borde derecho la caja se dibuja a la izquierda del crosshair.
+   Inspeccionar el presente es lo más frecuente y si no, se saldría. */
+.cursor-readout.flip {
+  transform: translateX(-100%);
+}
+
+.cursor-readout .time {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cursor-readout .items {
+  list-style: none;
+  margin: var(--sp-1) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+.cursor-readout .items:empty {
+  display: none;
+}
+.cursor-readout .items li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-1);
+  white-space: nowrap;
+}
+/* Una serie sin dato en ese instante se atenúa en vez de desaparecer: que la
+   fila salte de sitio al mover el cursor hace ilegible la lectura. */
+.cursor-readout .items li.empty {
+  opacity: 0.45;
+}
+.cursor-readout .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+.cursor-readout b {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.cursor-readout .unit {
+  color: var(--text-muted);
+}
+.cursor-readout .more {
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
+}
+.cursor-readout .more[hidden] {
+  display: none;
+}
+
+/* --- Handle de redimension ------------------------------------------- */
+
+.resize-handle {
+  flex: 0 0 7px;
+  height: 7px;
+  cursor: row-resize;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.resize-handle::after {
+  content: "";
+  width: 40px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--baseline);
+}
+.resize-handle:hover::after {
+  background: var(--accent);
+}
+
+/* --- Tabla de series -------------------------------------------------- */
+
+.table-wrap {
+  flex: 0 0 auto;
+  height: 240px;
+  overflow: auto;
+  background: var(--page-plane);
+}
+.table-wrap.collapsed {
+  height: 30px !important;
+  overflow: hidden;
+}
+.table-wrap.collapsed .series-table,
+.table-wrap.collapsed .series-add {
+  display: none;
+}
+
+.collapsed-strip {
+  display: none;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.table-wrap.collapsed .collapsed-strip {
+  display: flex;
+}
+.collapsed-strip .item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--text-secondary);
+}
+.collapsed-strip .item b {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.series-table th,
+.series-table td {
+  white-space: nowrap;
+}
+.series-table td {
+  padding: 0 var(--sp-1);
+}
+.series-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.row-hidden td {
+  opacity: 0.42;
+}
+.cursor-col {
+  background: rgba(57, 135, 229, 0.07);
+}
+th.cursor-col {
+  color: var(--accent);
+}
+
+.series-table input.tiny,
+.series-table select {
+  height: 22px;
+  font-size: var(--fs-xs);
+  padding: 0 var(--sp-1);
+}
+.series-table input.tiny {
+  width: 62px;
+}
+.series-table input[type="color"] {
+  width: 28px;
+  height: 20px;
+}
+.series-table button.ghost {
+  height: 22px;
+  width: 22px;
+  padding: 0;
+}
+
+.advanced {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-1);
+}
+.advanced label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.series-add {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--gridline);
+}
+.series-add select {
+  min-width: 200px;
+}
+.hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* --- Pantalla completa del grafico ------------------------------------ */
+
+body.chart-focus .topbar,
+body.chart-focus .table-wrap,
+body.chart-focus .resize-handle {
+  display: none;
+}
+
+/* --- Movil / paneles estrechos ---------------------------------------- */
+/* Usable, no prioritario: se ocultan las columnas de estadistica antes que
+   comprimir el grafico. */
+@media (max-width: 900px) {
+  .series-table th:nth-child(n + 11):nth-child(-n + 14),
+  .series-table td:nth-child(n + 11):nth-child(-n + 14) {
+    display: none;
+  }
+  .topbar-stats .stat:not(:last-child) {
+    display: none;
+  }
+}

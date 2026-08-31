@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Formularios · ADANVI</title>
+    <link rel="stylesheet" href="/static/css/tokens.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+    <link rel="stylesheet" href="/static/css/forms.css" />
+  </head>
+  <body>
+    <header class="topbar"></header>
+
+    <main class="page">
+      <div class="page-narrow">
+        <h1>Formularios</h1>
+        <p class="subtitle">
+          Lo que el PLC no puede saber y alguien tiene que escribir: la medición de
+          laboratorio, el peso de la báscula y lo que observa el operador de máquina.
+        </p>
+
+        <div class="cards">
+          <a class="card" href="/forms/operation">
+            <h3>Operación</h3>
+            <p>
+              Registro bobina a bobina del operador de máquina: horas, velocidad,
+              perfil de peso por zonas, rupturas y tipo de bobina.
+            </p>
+          </a>
+
+          <div class="card card-soon">
+            <h3>Laboratorio</h3>
+            <p>Gramaje y humedad de la muestra, hora y posición dentro de la bobina.</p>
+            <span class="chip idle">Próximamente</span>
+          </div>
+
+          <div class="card card-soon">
+            <h3>Ingeniería</h3>
+            <p>Parámetros vigentes de la fórmula y cierre de la sintonización por grado.</p>
+            <span class="chip idle">Próximamente</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="/static/js/forms.js"></script>
+  </body>
+</html>

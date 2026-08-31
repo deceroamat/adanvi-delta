@@ -1,0 +1,372 @@
+/* Armazon comun: topbar, controles, tablas, cards. */
+
+/* --- Topbar ---------------------------------------------------------- */
+
+.topbar {
+  flex: 0 0 var(--h-topbar);
+  height: var(--h-topbar);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.brand strong {
+  font-size: var(--fs-xl);
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+  font-weight: 650;
+}
+.brand span {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.nav {
+  display: flex;
+  gap: var(--sp-1);
+}
+.nav a {
+  display: flex;
+  align-items: center;
+  height: var(--h-control);
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--fs-md);
+}
+.nav a:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.nav a[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* TEMPORAL — navegacion bloqueada en la pantalla de captura (ver js/shell.js).
+   Los enlaces se quedan a la vista pero apagados: ocultarlos haria que el
+   topbar cambiara de forma al rehabilitarlos y pareceria un fallo. */
+.topbar.nav-locked .nav a {
+  opacity: 0.4;
+  cursor: default;
+}
+/* Sin esto los enlaces se seguirian iluminando al pasar por encima, que es la
+   senal contraria: .nav a:hover casa igual aunque el ancla ya no tenga href. */
+.topbar.nav-locked .nav a:hover {
+  background: none;
+  color: var(--text-secondary);
+}
+
+.topbar-stats {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.stat {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+.stat b {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--status-unknown);
+  flex: 0 0 auto;
+}
+.dot.ok {
+  background: var(--status-good);
+  box-shadow: 0 0 7px rgba(12, 163, 12, 0.75);
+}
+.dot.warn {
+  background: var(--status-warning);
+  box-shadow: 0 0 7px rgba(250, 178, 25, 0.75);
+}
+.dot.bad {
+  background: var(--status-critical);
+  box-shadow: 0 0 7px rgba(208, 59, 59, 0.75);
+}
+
+/* --- Contenido ------------------------------------------------------- */
+
+.page {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--sp-5);
+}
+.page-narrow {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: var(--fs-xl);
+  margin: 0 0 var(--sp-2);
+  font-weight: 600;
+}
+h2 {
+  font-size: var(--fs-lg);
+  margin: var(--sp-5) 0 var(--sp-3);
+  font-weight: 600;
+}
+.subtitle {
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  margin: 0 0 var(--sp-5);
+}
+
+/* --- Controles ------------------------------------------------------- */
+
+button,
+.btn {
+  height: var(--h-control);
+  padding: 0 var(--sp-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+button:hover:not(:disabled),
+.btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+button.danger:hover:not(:disabled) {
+  background: var(--status-critical);
+  border-color: var(--status-critical);
+}
+button.icon {
+  width: var(--h-control);
+  padding: 0;
+}
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+input,
+select {
+  height: var(--h-control);
+  padding: 0 var(--sp-2);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  min-width: 0;
+}
+input:hover,
+select:hover {
+  border-color: var(--border-strong);
+}
+input[aria-invalid="true"] {
+  border-color: var(--status-critical);
+}
+input[type="color"] {
+  padding: 2px;
+  cursor: pointer;
+}
+input[type="checkbox"] {
+  height: auto;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.form-row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* --- Tablas ---------------------------------------------------------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-1);
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: var(--sp-2) var(--sp-2);
+  border-bottom: 1px solid var(--baseline);
+  white-space: nowrap;
+}
+tbody td {
+  height: var(--h-row);
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--gridline);
+  color: var(--text-secondary);
+}
+tbody tr:hover td {
+  background: var(--surface-1);
+}
+td.num,
+th.num {
+  text-align: right;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border-radius: 10px;
+  font-size: var(--fs-xs);
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.chip.good {
+  background: rgba(12, 163, 12, 0.16);
+  color: #7ede7e;
+}
+.chip.bad {
+  background: rgba(208, 59, 59, 0.16);
+  color: #f09a9a;
+}
+.chip.idle {
+  background: rgba(137, 135, 129, 0.16);
+  color: var(--text-muted);
+}
+
+/* --- Cards ----------------------------------------------------------- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-3);
+}
+.card {
+  display: block;
+  padding: var(--sp-4);
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: inherit;
+}
+a.card:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.card h3 {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.card-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.empty {
+  padding: var(--sp-5);
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--baseline);
+  border-radius: var(--radius-lg);
+}
+
+/* --- Avisos ---------------------------------------------------------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-5);
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  font-size: var(--fs-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.toast.error {
+  background: #3a1616;
+  border-color: var(--status-critical);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
