@@ -26,6 +26,11 @@ def _int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     plc_ip: str = os.getenv("PLC_IP", "")
+    plc_port: int = _int("PLC_PORT", 502)
+    # Esclavo por defecto para los tags nuevos; cada tag guarda el suyo.
+    plc_unit_id: int = _int("PLC_UNIT_ID", 1)
+    # Por debajo del periodo de ciclo: un timeout largo arrastraria la malla.
+    plc_timeout_ms: int = _int("PLC_TIMEOUT_MS", 800)
     read_interval_ms: int = _int("READ_INTERVAL_MS", 1000)
 
     database_url: str = os.getenv(
@@ -41,10 +46,6 @@ class Settings:
     # 0 = sin tope.
     max_galleries: int = _int("MAX_GALLERIES", 0)
 
-    # Minutos que el operador tiene para corregir una fila del formulario de
-    # operacion despues de guardarla. Pasado ese plazo la fila queda bloqueada.
-    op_edit_window_min: int = _int("OP_EDIT_WINDOW_MIN", 30)
-
     # Cada cuanto el worker recarga la lista de tags activos desde BD.
     tag_reload_s: int = _int("TAG_RELOAD_S", 15)
     # Cada cuanto se persiste tags.last_seen_ts (no cada ciclo: 100 UPDATE/s
@@ -57,6 +58,10 @@ class Settings:
     @property
     def read_interval_s(self) -> float:
         return self.read_interval_ms / 1000.0
+
+    @property
+    def plc_timeout_s(self) -> float:
+        return self.plc_timeout_ms / 1000.0
 
 
 settings = Settings()

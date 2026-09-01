@@ -30,26 +30,40 @@ PROFILES = [
     ("Bomba{n}_ON", "Bomba {n} en marcha", None, "digital", 0.0, 0.0, 0),
 ]
 
+# Mapa de memoria que comparten este script y scripts/modbus_sim.py. Los
+# analogicos van contiguos a proposito: asi el agrupador de bloques del cliente
+# los mete en una sola peticion, que es el caso que interesa ejercitar.
+HOLDING_BASE = 4096
+COIL_BASE = 0
+
 
 def build_tags(conn, count: int) -> list[tuple[int, str, float, float, str]]:
     created = []
+    analogicos = digitales = 0
     for i in range(count):
         name_tpl, label_tpl, unit, kind, base, noise, decimals = PROFILES[i % len(PROFILES)]
         n = i // len(PROFILES) + 1
         name = name_tpl.format(n=n)
+
+        # Los digitales viven en bobinas y los analogicos en holding, escalados
+        # x10 como los publica un PLC real.
+        if kind == "digital":
+            area, address, data_type, scale = "coil", COIL_BASE + digitales, "bit", 1.0
+            digitales += 1
+        else:
+            area, address, data_type, scale = (
+                "holding", HOLDING_BASE + analogicos, "int16", 0.1,
+            )
+            analogicos += 1
+
         row = conn.execute(
-            "INSERT INTO tags (name, label, unit, decimals, kind, value_type) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "INSERT INTO tags (name, label, unit, decimals, kind, "
+            "                  area, address, data_type, scale) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (name) DO UPDATE SET label = EXCLUDED.label "
             "RETURNING id",
-            (
-                name,
-                label_tpl.format(n=n),
-                unit,
-                decimals,
-                kind,
-                "BOOL" if kind == "digital" else "REAL",
-            ),
+            (name, label_tpl.format(n=n), unit, decimals, kind,
+             area, address, data_type, scale),
         ).fetchone()
         created.append((row[0], name, base, noise, kind))
     conn.commit()

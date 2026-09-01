@@ -58,16 +58,8 @@
 /* TEMPORAL — navegacion bloqueada en la pantalla de captura (ver js/shell.js).
    Los enlaces se quedan a la vista pero apagados: ocultarlos haria que el
    topbar cambiara de forma al rehabilitarlos y pareceria un fallo. */
-.topbar.nav-locked .nav a {
-  opacity: 0.4;
-  cursor: default;
-}
 /* Sin esto los enlaces se seguirian iluminando al pasar por encima, que es la
    senal contraria: .nav a:hover casa igual aunque el ancla ya no tenga href. */
-.topbar.nav-locked .nav a:hover {
-  background: none;
-  color: var(--text-secondary);
-}
 
 .topbar-stats {
   margin-left: auto;
@@ -237,6 +229,23 @@ label {
   gap: var(--sp-1);
 }
 
+/* Los ajustes finos del direccionamiento Modbus (escala, orden de palabra,
+   esclavo) casi siempre valen por defecto: van plegados para que dar de alta un
+   tag siga siendo teclear nombre, direccion y tipo. */
+.form-advanced {
+  margin: calc(var(--sp-4) * -1) 0 var(--sp-4);
+}
+.form-advanced > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  padding: var(--sp-2) 0;
+  user-select: none;
+}
+.form-advanced[open] > summary {
+  margin-bottom: var(--sp-2);
+}
+
 /* --- Tablas ---------------------------------------------------------- */
 
 table {
@@ -360,13 +369,4 @@ a.card:hover {
 .toast.error {
   background: #3a1616;
   border-color: var(--status-critical);
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }

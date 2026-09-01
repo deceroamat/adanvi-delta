@@ -21,12 +21,9 @@ def client():
     "path,needle",
     [
         ("/", "ADANVI"),
-        ("/tags", "Nombre CIP"),
+        ("/tags", "Dirección"),
         ("/galleries", "Galerías de tendencias"),
         ("/galleries/1", "LIVE"),
-        ("/forms", "Operación"),
-        ("/forms/operation", "Consecutivo"),
-        ("/forms/operation", "Referencia"),
     ],
 )
 async def test_las_paginas_se_sirven(client, path, needle):
@@ -42,9 +39,6 @@ async def test_las_paginas_se_sirven(client, path, needle):
         "/static/css/tokens.css",
         "/static/css/app.css",
         "/static/css/gallery.css",
-        "/static/css/forms.css",
-        "/static/js/forms.js",
-        "/static/js/form-operation.js",
         "/static/js/viewport.js",
         "/static/js/cache.js",
         "/static/js/chart.js",
@@ -63,7 +57,7 @@ async def test_los_estaticos_existen(client, path):
 
 @pytest.mark.parametrize(
     "path",
-    ["/forms/operation", "/static/js/shell.js", "/static/css/app.css"],
+    ["/tags", "/static/js/shell.js", "/static/css/app.css"],
 )
 async def test_el_frontend_se_revalida(client, path):
     async with client:
@@ -95,65 +89,6 @@ async def test_ventana_invalida_da_400_con_mensaje_util(client):
     assert "minutos" in bad.json()["detail"]
 
 
-def _op_payload(**overrides):
-    payload = {
-        "reference": "K40",
-        "consecutive": "B-001",
-        "shift_date": "2026-08-15",
-        "start_time": "06:00",
-        "end_time": "06:40",
-        "machine_speed": 420.0,
-        "weight_profile": [18.0] * 10,
-        "base_weight": 18.0,
-        "reel_weight": 900.0,
-        "breaks": 0,
-        "reel_type": "x1",
-    }
-    payload.update(overrides)
-    return payload
-
-
-async def test_el_formulario_de_operacion_dice_que_zona_esta_mal(client):
-    # La validacion de Pydantic corre antes del handler, asi que no toca la BD.
-    profile = [18.0] * 10
-    profile[3] = 200.0
-    async with client:
-        res = await client.post("/api/forms/operation", json=_op_payload(weight_profile=profile))
-    assert res.status_code == 422
-    detail = str(res.json()["detail"])
-    # Que diga "la zona 4" es el punto: son diez casillas identicas en pantalla.
-    assert "zona 4" in detail
-
-
-async def test_el_formulario_de_operacion_exige_referencia(client):
-    payload = _op_payload()
-    del payload["reference"]
-    async with client:
-        res = await client.post("/api/forms/operation", json=payload)
-    # Es opcional en la tabla (habia bobinas registradas antes de que existiera
-    # la columna) pero obligatoria al registrar de aqui en adelante.
-    assert res.status_code == 422
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"machine_speed": 900.0},          # tope 600 m/min
-        {"base_weight": 5.0},              # minimo 10 g/m2
-        {"breaks": 9},                     # maximo 5
-        {"reel_type": "x9"},               # solo x1 / x2
-        {"weight_profile": [18.0] * 9},    # deben ser 10 zonas
-        {"consecutive": "   "},            # consecutivo vacio
-        {"reference": "   "},              # referencia vacia
-        {"reference": "K" * 21},           # tope 20 caracteres
-    ],
-)
-async def test_el_formulario_de_operacion_rechaza_valores_fuera_de_rango(client, overrides):
-    async with client:
-        res = await client.post("/api/forms/operation", json=_op_payload(**overrides))
-    assert res.status_code == 422
-
-
 async def test_history_rechaza_peticiones_mal_formadas(client):
     async with client:
         sin_rango = await client.get("/api/history?tags=1")
@@ -162,20 +97,18 @@ async def test_history_rechaza_peticiones_mal_formadas(client):
     assert tag_malo.status_code == 400
 
 
-@pytest.mark.parametrize(
-    "path,comprimido",
-    [
-        ("/static/js/cache.js", True),   # 13 KB
-        ("/static/js/forms.js", False),  # unas pocas lineas
-    ],
-)
-async def test_las_respuestas_grandes_viajan_comprimidas(client, path, comprimido):
+async def test_las_respuestas_grandes_viajan_comprimidas(client):
     async with client:
-        res = await client.get(path, headers={"accept-encoding": "gzip"})
+        res = await client.get("/static/js/cache.js", headers={"accept-encoding": "gzip"})
     # Una ventana de 1 h con 9 series son ~350 KB de JSON y comprimen 5.8x. Sin
     # esto, cada pan se los lleva enteros por el tunel de Tailscale.
-    if comprimido:
-        assert res.headers.get("content-encoding") == "gzip"
-    else:
-        # Por debajo del minimo no compensa: cuesta CPU y puede salir mas grande.
-        assert "content-encoding" not in res.headers
+    assert res.headers.get("content-encoding") == "gzip"
+
+
+async def test_las_respuestas_pequenas_no_se_comprimen(client):
+    async with client:
+        res = await client.get("/api/history/window?w=15m", headers={"accept-encoding": "gzip"})
+    # Por debajo del minimo de 1 KB no compensa: cuesta CPU y puede salir mas
+    # grande de lo que entro.
+    assert res.status_code == 200
+    assert "content-encoding" not in res.headers

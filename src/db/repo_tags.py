@@ -10,13 +10,17 @@ from psycopg.rows import dict_row
 # Lista fija de columnas. Se interpola en los f-string de abajo; no proviene de
 # entrada del usuario en ningun caso (de ahi los `noqa: S608`).
 COLUMNS = (
-    "id, name, label, unit, decimals, kind, active, value_type, "
+    "id, name, label, unit, decimals, kind, active, "
+    "unit_id, area, address, data_type, word_order, scale, value_offset, "
     "last_seen_ts, created_at, updated_at"
 )
 
 # Unicos campos que un PATCH puede tocar. update_tag compone los nombres con
 # sql.Identifier, asi que una clave fuera de esta lista no puede llegar al SQL.
-_PATCHABLE = ("label", "unit", "decimals", "kind", "active")
+_PATCHABLE = (
+    "label", "unit", "decimals", "kind", "active",
+    "unit_id", "area", "address", "data_type", "word_order", "scale", "value_offset",
+)
 
 
 async def list_tags(pool, only_active: bool = False) -> list[dict[str, Any]]:
@@ -36,8 +40,9 @@ async def create_tag(pool, data: dict[str, Any]) -> dict[str, Any]:
     async with pool.connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
-                "INSERT INTO tags (name, label, unit, decimals, kind, active) "  # noqa: S608
-                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "INSERT INTO tags (name, label, unit, decimals, kind, active, "  # noqa: S608
+                "  unit_id, area, address, data_type, word_order, scale, value_offset) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 f"RETURNING {COLUMNS}",
                 (
                     data["name"],
@@ -46,6 +51,13 @@ async def create_tag(pool, data: dict[str, Any]) -> dict[str, Any]:
                     data.get("decimals", 2),
                     data.get("kind", "analog"),
                     data.get("active", True),
+                    data["unit_id"],
+                    data["area"],
+                    data["address"],
+                    data["data_type"],
+                    data["word_order"],
+                    data["scale"],
+                    data["value_offset"],
                 ),
             )
             row = await cur.fetchone()

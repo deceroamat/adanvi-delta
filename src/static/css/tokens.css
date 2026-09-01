@@ -25,10 +25,6 @@
   --status-critical: #d03b3b;
   --status-unknown: #55534d;
 
-  /* Banda de perdida de datos sobre el area de trazo */
-  --gap-fill: rgba(208, 59, 59, 0.14);
-  --gap-edge: rgba(208, 59, 59, 0.55);
-
   /* Acento */
   --accent: #3987e5;
   --accent-soft: rgba(57, 135, 229, 0.16);

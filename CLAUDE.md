@@ -4,11 +4,15 @@ Guía para agentes que trabajen en este repositorio.
 
 ## Qué es ADANVI
 
-Historiador de tendencias para PLC Allen-Bradley (**ADANVI by emolog**): adquiere
-~100 tags a 1 Hz por EtherNet/IP, los guarda en PostgreSQL + TimescaleDB con
-retención acotada, y los muestra en galerías de tendencias con navegación
-temporal en vivo e histórica. Incluye un formulario de captura manual (operación,
-bobina a bobina).
+Historiador de tendencias para PLC **Delta AS-200** (**ADANVI by emolog**):
+adquiere ~100 tags a 1 Hz por **Modbus/TCP**, los guarda en PostgreSQL +
+TimescaleDB con retención acotada, y los muestra en galerías de tendencias con
+navegación temporal en vivo e histórica.
+
+Nació contra un Allen-Bradley por EtherNet/IP; la migración a Modbus (migración
+008) cambió el modelo de tags de *nombre CIP con tipo descubierto* a *área +
+dirección + tipo declarado*. El formulario de operación se retiró en ese mismo
+cambio.
 
 Dimensionado para un host modesto (i5-6500T, 8 GB, SSD), LAN industrial aislada,
 **sin autenticación** y **sin build step de frontend**.
@@ -21,7 +25,7 @@ galerías).
 ## Stack
 
 - Python 3.12, `uv` + `uv.lock`, FastAPI + Uvicorn, `psycopg` 3 (pools sync y
-  async separados), `pycomm3` (LogixDriver).
+  async separados), `pymodbus` 3 (`ModbusTcpClient` síncrono).
 - TimescaleDB 2.29.1 sobre PG16, versión fijada en `docker-compose.yml`.
 - Frontend: HTML + CSS + ES modules nativos, sin framework, sin bundler. uPlot
   vendorizado en `src/static/vendor/` (sin CDN).
@@ -34,9 +38,10 @@ docker-compose up -d                 # despliegue completo (app en :8000)
 docker-compose up -d db              # solo la base, para desarrollo local
 uv sync
 uv run python -m src                 # app en el host (DATABASE_URL -> localhost:5430)
-uv run pytest                        # 85 tests, no requieren base de datos
+uv run pytest                        # 87 tests, no requieren base de datos
 deno test tests/frontend.test.js     # tests de la lógica de cliente (requiere Deno)
 uv run python scripts/seed.py --days 35 --tags 12 --interval 5
+uv run python scripts/modbus_sim.py  # esclavo Modbus falso en :5020, para probar sin PLC
 uv run python scripts/grant_ro.py    # habilita el rol de solo lectura adanvi_ro
 uv run python scripts/refresh_caggs.py --from ... --to ...  # rellena caggs (leer avisos)
 ```
@@ -55,19 +60,19 @@ src/
   __main__.py     wait_for_db -> migraciones -> hilos worker -> uvicorn
   app.py          FastAPI: solo lifespan (prohibido @app.on_event), GZip, estáticos
   config.py       ÚNICO lugar donde se leen variables de entorno (dataclass Settings)
-  constants.py    códigos de status y paleta de 8 colores
+  constants.py    códigos de status (la paleta de series vive en series-table.js)
   timeparse.py    parser de ventanas y elección de capa/bucket (solo servidor)
-  plc_client.py   pycomm3: multi-read CIP en una llamada + backoff (1,2,4,8,15 s)
+  plc_client.py   pymodbus: agrupador de bloques + decodificación + backoff (1,2,4,8,15 s)
   worker/         acquirer / writer / broadcaster + registry + status
-  api/            health, tags, history, galleries, export, forms, live_ws
+  api/            health, tags, history, galleries, export, live_ws
   db/             pool, migrate, repo_* (todo el SQL vive aquí)
   static/         páginas HTML + js/ (ES modules) + css/ + vendor/uplot
 migrations/       SQL numerado, aplicado al arrancar y registrado en schema_migrations
-scripts/          seed, refresh_caggs, grant_ro, backup_database.sh
+scripts/          seed, modbus_sim, refresh_caggs, grant_ro, backup_database.sh
 deploy/systemd/   timer + service del backup diario 06:00
 ```
 
-**Worker: tres hilos desacoplados por colas acotadas con drop-oldest.**
+**Worker: tres responsabilidades desacopladas por colas acotadas con drop-oldest.**
 
 1. `Acquirer` — malla temporal sobre `monotonic()` sin deriva; timestamp tomado
    *antes* del read. **Nunca toca la base de datos.**
@@ -75,6 +80,10 @@ deploy/systemd/   timer + service del backup diario 06:00
    `acquisition_gaps`, recarga del catálogo de tags cada ~15 s.
 3. `Broadcaster` (`hub`) — puente hilo→asyncio hacia los WebSockets, con cola
    propia por conexión.
+
+Los dos primeros son **hilos** (`__main__.py`); el broadcaster no lo es: vive en
+el event loop de uvicorn y recibe del worker por `call_soon_threadsafe`. No
+buscar un tercer `threading.Thread`, no existe.
 
 Separar escritura de adquisición es lo que impide que un checkpoint de Postgres
 o un job de compresión desvíe la cadencia de lectura del PLC. Al añadir trabajo,
@@ -112,12 +121,11 @@ respetar el reparto: nada de I/O de base en el acquirer.
 
 | Objeto | Qué es |
 |---|---|
-| `tags` | Catálogo de lo que se pollea |
+| `tags` | Catálogo: qué se pollea y **de qué dirección Modbus** |
 | `readings` | Hypertable cruda (chunks de 1 día), 90 d, comprime > 2 d |
 | `readings_1m` / `readings_1h` | Caggs con `avg,min,max,n,last`; 1 año / 5 años |
 | `acquisition_gaps` | Intervalos sin adquisición; a lo sumo uno abierto |
 | `galleries` / `gallery_series` | Galerías y configuración de cada serie |
-| `op_records` / `op_record_revisions` | Formulario de operación y sus correcciones |
 
 Migraciones: SQL plano numerado en `migrations/`, aplicado por
 `src/db/migrate.py` en orden, con checksum en `schema_migrations`. **Una
@@ -134,11 +142,10 @@ cambia, hay que hacer `remove_retention_policy` + `add_retention_policy`.
 `/api/health`, `/api/live/snapshot`, `/api/tags` (CRUD; `DELETE` desactiva,
 `?purge=true` borra histórico), `/api/history` y `/api/history/window`,
 `/api/galleries` (+ `PUT /{id}/series`, reemplazo atómico), `/api/export.csv`,
-`/api/forms/operation` (+ `.csv`), y `WS /ws/live` (ticks columnares alineados al
-orden de `tag_ids` suscritos, más eventos `gap_open`/`gap_close`).
+y `WS /ws/live` (ticks columnares alineados al orden de `tag_ids` suscritos, más
+eventos `gap_open`/`gap_close`).
 
-Páginas: `/`, `/tags`, `/galleries`, `/galleries/{id}`, `/forms`,
-`/forms/operation`.
+Páginas: `/`, `/tags`, `/galleries`, `/galleries/{id}`.
 
 ## Frontend
 
@@ -164,22 +171,34 @@ Módulos sin DOM (testeables con Deno): `cache.js`, `scales.js`, `viewport.js`.
 - Los estáticos se sirven con `cache-control: no-cache` porque los nombres no
   llevan hash de contenido.
 
-## Formulario de operación
+## Direccionamiento Modbus
 
-- La referencia admite valores fuera de lista: `REFERENCES` en `src/api/forms.py`
-  es la fuente y el HTML no la repite; no hay `CHECK` contra ella y el valor se
-  normaliza a mayúsculas. La columna es *nullable* por datos históricos.
-- Se guardan `TIMESTAMPTZ` reales: la UI pide `HH:MM` y el servidor los compone
-  con `shift_date` en `TZ`; si el fin no es posterior al inicio, cae al día siguiente.
-- La corrección es **por plazo, no por rol**: `OP_EDIT_WINDOW_MIN` (30 min) desde
-  `created_at`; `?force=true` desbloquea y queda como `source='ingenieria'` en
-  `op_record_revisions`. **No es control de acceso** — cuando existan usuarios
-  debe convertirse en una comprobación de permiso.
-- Los rangos están duplicados a propósito: `CHECK` en la migración 006 (protege
-  la tabla) y Pydantic en `forms.py` (mensaje entendible). `form-operation.js`
-  los espeja solo para avisar antes de enviar.
-- `mountTopbar("forms", { lockNav: true })` deshabilita la navegación mientras se
-  captura; está marcado TEMPORAL en `shell.js` con instrucciones para quitarlo.
+Modbus no tiene tags con nombre ni tipo en el cable. Cada fila de `tags` declara
+`unit_id`, `area` (`coil`/`discrete`/`holding`/`input`), `address`, `data_type`,
+`word_order`, `scale` y `value_offset`; el valor guardado es
+`crudo * scale + value_offset`. `tags.name` pasó a ser un identificador humano,
+no una dirección.
+
+- **Una petición lee un rango contiguo**, así que `plan_blocks` (en
+  `plc_client.py`) agrupa los tags en bloques respetando los topes del protocolo
+  (125 registros en FC03/FC04, 2000 bits en FC01/FC02) y fusionando huecos de
+  hasta 8 registros: a 1 Hz lo caro son las idas y vueltas TCP, no los bytes.
+- **El plan se cachea por identidad de la tupla del registry** (`tags is
+  self._planned_for`), que se reemplaza entera al recargar el catálogo. No hace
+  falta un contador de versión.
+- **El error es por BLOQUE, no por tag.** Una dirección ilegal hace que el
+  esclavo rechace la petición entera, así que sus vecinas de bloque también salen
+  con `status = 2`. Es del protocolo, no una decisión de diseño.
+- **Distinguir transporte de configuración es lo que sostiene el invariante de
+  los huecos**: socket caído → se lanza y se abre un gap; `ExceptionResponse` →
+  solo ese bloque va a `TagError`.
+- **El orden de palabra invertido no da error**: da un número plausible y falso.
+  Por eso es configurable por tag y hay que cotejar contra ISPSoft antes de dar
+  de alta una tanda.
+- Coherencia área↔tipo duplicada a propósito: `CHECK` en la migración 008 y
+  `model_validator` en `api/tags.py`, misma convención que ya había.
+- `scripts/modbus_sim.py` levanta un esclavo falso con el mismo mapa que siembra
+  `seed.py`: es como se prueba el camino completo sin el PLC.
 
 ## Convenciones
 

@@ -24,18 +24,24 @@ log = logging.getLogger(__name__)
 class Acquirer(threading.Thread):
     def __init__(self, stop_event: threading.Event) -> None:
         super().__init__(name="adanvi-acquirer", daemon=True)
-        self._stop = stop_event
-        self._plc = PlcClient(settings.plc_ip)
+        # `_stop_event`, no `_stop`: `threading.Thread._stop` es un metodo interno
+        # que `join()` invoca a traves de `_wait_for_tstate_lock`. Pisarlo con un
+        # Event hace que `join()` lance TypeError, y como se llama desde el
+        # `finally` de __main__, el apagado se interrumpe ahi: el writer nunca
+        # vacia su lote pendiente y se pierde hasta un segundo de adquisicion.
+        self._stop_event = stop_event
+        self._plc = PlcClient(
+            settings.plc_ip, settings.plc_port, settings.plc_timeout_s
+        )
         self._retry_at = 0.0
         self._gap_open = False
-        self._reported_types: dict[int, str] = {}
 
     def run(self) -> None:
         status.set_alive(True)
         interval = settings.read_interval_s
         next_tick = time.monotonic()
         try:
-            while not self._stop.is_set():
+            while not self._stop_event.is_set():
                 next_tick += interval
                 scheduled = next_tick
                 try:
@@ -47,7 +53,7 @@ class Acquirer(threading.Thread):
 
                 slack = scheduled - time.monotonic()
                 if slack > 0:
-                    self._stop.wait(slack)
+                    self._stop_event.wait(slack)
                 else:
                     # Vamos atrasados: se resincroniza la malla en vez de
                     # disparar una rafaga de ciclos para "recuperar".
@@ -76,22 +82,21 @@ class Acquirer(threading.Thread):
                 self._fail_cycle(ts, "PLC no alcanzable")
                 return
 
-        names = [t.name for t in tags]
         started = time.monotonic()
         try:
-            results = self._plc.read_many(names)
+            # Se pasan los tags enteros, no los nombres: Modbus necesita area,
+            # direccion y tipo para saber que pedir y como interpretarlo.
+            results = self._plc.read_many(tags)
         except Exception as exc:
             self._plc.close()
             self._retry_at = time.monotonic() + self._plc.backoff_s()
             self._fail_cycle(ts, f"lectura fallida: {exc}")
             return
 
-        readings: list[tuple[int, float | None, int]] = []
-        for tag, res in zip(tags, results, strict=False):
-            readings.append((tag.id, res.value, res.status))
-            if res.value_type and self._reported_types.get(tag.id) != res.value_type:
-                self._reported_types[tag.id] = res.value_type
-                write_q.put(("value_type", tag.id, res.value_type))
+        readings: list[tuple[int, float | None, int]] = [
+            (tag.id, res.value, res.status)
+            for tag, res in zip(tags, results, strict=False)
+        ]
 
         self._on_success(ts)
         write_q.put(("rows", ts, readings))

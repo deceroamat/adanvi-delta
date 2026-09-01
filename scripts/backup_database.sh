@@ -80,7 +80,7 @@ size="$(stat -c %s "$tmp")"
 
 toc="$(db_exec pg_restore --list < "$tmp")" || fail "pg_restore --list no pudo leer el dump (corrupto)"
 
-for t in tags galleries gallery_series op_records op_record_revisions \
+for t in tags galleries gallery_series \
          acquisition_gaps readings schema_migrations; do
     grep -Eq "TABLE public ${t}( |\$)" <<<"$toc" || fail "falta la tabla '$t' en el dump"
 done

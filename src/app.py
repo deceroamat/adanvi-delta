@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import export, forms, galleries, health, history, live_ws, tags
+from .api import export, galleries, health, history, live_ws, tags
 from .config import settings
 from .db.pool import close_async_pool, open_async_pool
 from .worker.broadcaster import hub
@@ -68,7 +68,6 @@ def create_app() -> FastAPI:
     app.include_router(history.router)
     app.include_router(galleries.router)
     app.include_router(export.router)
-    app.include_router(forms.router)
     app.include_router(live_ws.router)
 
     static_dir = settings.static_dir
@@ -85,8 +84,6 @@ def create_app() -> FastAPI:
     app.get("/tags", include_in_schema=False)(page("tags.html"))
     app.get("/galleries", include_in_schema=False)(page("galleries.html"))
     app.get("/galleries/{gallery_id}", include_in_schema=False)(page("gallery.html"))
-    app.get("/forms", include_in_schema=False)(page("forms.html"))
-    app.get("/forms/operation", include_in_schema=False)(page("form-operation.html"))
 
     return app
 

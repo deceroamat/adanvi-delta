@@ -22,7 +22,7 @@ def setup_logging() -> None:
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    logging.getLogger("pycomm3").setLevel(logging.WARNING)
+    logging.getLogger("pymodbus").setLevel(logging.WARNING)
 
 
 def main() -> None:

@@ -28,10 +28,10 @@ function render() {
     <table>
       <thead>
         <tr>
-          <th>Nombre CIP</th>
+          <th>Nombre</th>
           <th>Etiqueta</th>
+          <th>Dirección</th>
           <th>Unidad</th>
-          <th>Tipo</th>
           <th class="num">Último valor</th>
           <th>Calidad</th>
           <th>Activo</th>
@@ -57,13 +57,25 @@ function qualityHtml(statusName) {
   return `<span class="chip bad">${escapeHtml(statusName)}</span>`;
 }
 
+/** Direccion legible de un vistazo: es lo que se coteja contra ISPSoft. */
+function addressHtml(tag) {
+  const partes = [`${tag.area}:${tag.address}`, tag.data_type];
+  // El orden de palabra solo existe a partir de 32 bits; mostrarlo en un int16
+  // seria ruido que ademas sugiere que hace algo.
+  if (tag.data_type.endsWith("32") && tag.word_order === "little") partes.push("LSW");
+  if (Number(tag.scale) !== 1) partes.push(`×${tag.scale}`);
+  if (Number(tag.value_offset) !== 0) partes.push(`${tag.value_offset > 0 ? "+" : ""}${tag.value_offset}`);
+  if (Number(tag.unit_id) !== 1) partes.push(`esclavo ${tag.unit_id}`);
+  return `<span class="mono">${escapeHtml(partes.join(" · "))}</span>`;
+}
+
 function rowHtml(tag) {
   return `
     <tr>
       <td class="mono">${escapeHtml(tag.name)}</td>
       <td>${escapeHtml(tag.label || "—")}</td>
+      <td>${addressHtml(tag)}</td>
       <td>${escapeHtml(tag.unit || "—")}</td>
-      <td>${escapeHtml(tag.value_type || tag.kind)}</td>
       <td class="num" data-value="${tag.id}">${fmtNumber(tag.last_value, tag.decimals)}</td>
       <td data-quality="${tag.id}">${qualityHtml(tag.last_status)}</td>
       <td><input type="checkbox" data-toggle="${tag.id}" ${tag.active ? "checked" : ""} /></td>
@@ -132,13 +144,26 @@ form.addEventListener("submit", async (event) => {
     unit: data.unit?.trim() || null,
     decimals: Number(data.decimals) || 0,
     kind: data.kind,
+    area: data.area,
+    address: Number(data.address),
+    data_type: data.data_type,
+    word_order: data.word_order,
+    scale: Number(data.scale),
+    value_offset: Number(data.value_offset),
+    unit_id: Number(data.unit_id),
   };
   if (!payload.name) return;
 
   try {
     await api.post("/api/tags", payload);
+    // Los tags se dan de alta en tandas por el mapa de memoria, asi que se
+    // conserva el area/tipo y se avanza la direccion: teclear la siguiente
+    // variable no deberia obligar a reconfigurarlo todo otra vez.
+    const siguiente = payload.address + (payload.data_type.endsWith("32") ? 2 : 1);
     form.reset();
-    document.getElementById("f-decimals").value = "2";
+    document.getElementById("f-area").value = payload.area;
+    document.getElementById("f-data-type").value = payload.data_type;
+    document.getElementById("f-address").value = String(siguiente);
     document.getElementById("f-name").focus();
     toast(`Tag "${payload.name}" agregado`);
     await load();

@@ -1,29 +1,22 @@
 # ADANVI by emolog
 
-Historiador de tendencias para PLC Allen-Bradley: adquisición continua de tags,
-almacenamiento time-series con retención acotada y galerías de tendencias con
-navegación temporal en vivo e histórica.
+Historiador de tendencias para PLC **Delta AS-200** por **Modbus/TCP**:
+adquisición continua de tags, almacenamiento time-series con retención acotada y
+galerías de tendencias con navegación temporal en vivo e histórica.
 
 Dimensionado para ~100 tags a 1 Hz sobre un host modesto (i5-6500T, 8 GB RAM,
 SSD). Sin framework de frontend, sin build step.
 
----
-
 ## Puesta en marcha
 
 ```bash
-cp .env.example .env      # ajusta PLC_IP y POSTGRES_PASSWORD
+cp .env.example .env      # ajusta PLC_IP, PLC_PORT y POSTGRES_PASSWORD
 docker-compose up -d
 ```
 
-La app queda en <http://localhost:8000>. Las migraciones se aplican solas al
-arrancar; no hay paso manual.
-
-Si tu usuario no está en el grupo `docker`:
-
-```bash
-sudo usermod -aG docker $USER && newgrp docker
-```
+La app queda en <http://localhost:8000> y las migraciones se aplican solas al
+arrancar. Si tu usuario no está en el grupo `docker`:
+`sudo usermod -aG docker $USER && newgrp docker`.
 
 ### Desarrollo local
 
@@ -31,25 +24,27 @@ sudo usermod -aG docker $USER && newgrp docker
 docker-compose up -d db                       # solo la base
 uv sync
 uv run python -m src                          # app en el host
-uv run pytest                                 # tests
+uv run pytest                                 # 87 tests, no requieren base de datos
+deno test tests/frontend.test.js              # 38 tests de la lógica de cliente
 uv run python scripts/seed.py --days 35 --tags 12 --interval 5
+uv run python scripts/modbus_sim.py           # esclavo Modbus falso, para probar sin PLC
 ```
 
-Con `DATABASE_URL` apuntando a `localhost:5432` en tu `.env`.
-
----
+Con `DATABASE_URL` apuntando a **`localhost:5430`** en tu `.env` — no 5432: el
+contenedor publica Postgres en `127.0.0.1:5430` para no chocar con un Postgres
+del host ni escuchar en la LAN. Los tests de cliente cubren `cache.js`,
+`scales.js` y `viewport.js` (los módulos sin DOM) y necesitan
+[Deno](https://deno.com).
 
 ## Modelo de datos
 
 | Objeto | Qué es |
 |---|---|
-| `tags` | Catálogo. **Única fuente de verdad de lo que se pollea.** No hay YAML ni CSV. |
+| `tags` | Catálogo: qué se pollea y de qué dirección Modbus. **Única fuente de verdad.** No hay YAML ni CSV. |
 | `readings` | Hypertable cruda, un punto por tag y por ciclo. |
 | `readings_1m` / `readings_1h` | Agregados continuos con `avg`, `min`, `max`, `n`, `last`. |
 | `acquisition_gaps` | Intervalos sin adquisición (PLC caído, app reiniciada). |
 | `galleries` / `gallery_series` | Galerías y la configuración de cada serie. |
-| `op_records` | Formulario de operación: una fila por bobina, escrita a mano. |
-| `op_record_revisions` | Imagen previa de cada corrección hecha sobre `op_records`. |
 
 ### Política de retención
 
@@ -59,16 +54,12 @@ Con `DATABASE_URL` apuntando a `localhost:5432` en tu `.env`.
 | `readings_1m` | 1 min | 1 año | chunks > 30 días | ~2.2 GB |
 | `readings_1h` | 1 hora | 5 años | chunks > 90 días | ~0.3 GB |
 
-Chunks de 1 día (~8.6 M filas con 100 tags). **Total ≈ 16 GB**, holgado sobre los
-~200 GB del host de referencia.
-
-Cifras medidas sobre datos reales en este despliegue, no estimadas: 137 B/fila en
-crudo con ratio de compresión **9.4x** (→ 126 MB/día), y 148 B/fila en el agregado
-de 1 minuto con ratio **4.6x** (los agregados comprimen peor porque guardan cinco
-columnas de flotantes independientes en vez de una sola serie delta-codificada).
-
-Son un techo conservador: se midieron con datos sintéticos con ruido gaussiano,
-y una señal de proceso real es más suave y comprime mejor.
+Chunks de 1 día (~8.6 M filas con 100 tags). **Total ≈ 16 GB** sobre los ~200 GB
+del host. Cifras medidas: 137 B/fila en crudo con ratio **9.4x** (→ 126 MB/día) y
+148 B/fila en el agregado de 1 min con ratio **4.6x** (comprime peor: cinco
+columnas de flotantes en vez de una serie delta-codificada). El disco incluye la
+**ventana caliente sin comprimir** (2 días × 1.18 GB más 88 comprimidos, ≈ 13.4 GB),
+que es lo que hace que el crudo no sean 126 MB × 90.
 
 Para cambiar una retención hay que reemplazar la policy; editar el `.env` no
 basta, porque las policies viven en la base:
@@ -82,78 +73,55 @@ SELECT add_retention_policy('readings', INTERVAL '120 days');
 
 Cuando el PLC no responde, ADANVI **no escribe filas**: registra el intervalo en
 `acquisition_gaps` y el gráfico dibuja una banda roja "SIN DATO" con la línea
-cortada.
-
-Escribir `0.0` —como hacía el prototipo— tiene tres problemas: destruye el
-autoescalado (una temperatura de 180 °C que cae a 0 aplana toda la variación
-real), envenena de forma irreversible los agregados continuos, y hace
-indistinguible "PLC caído" de "la variable vale cero de verdad". Además, una
-caída de 8 horas generaría 2.88 M de filas sin información.
+cortada. Escribir `0.0` —como hacía el prototipo— destruye el autoescalado (una
+temperatura de 180 °C que cae a 0 aplana toda la variación real), envenena de
+forma irreversible los agregados y hace indistinguible "PLC caído" de "la
+variable vale cero de verdad"; una caída de 8 horas generaría además 2.88 M de
+filas sin información.
 
 Un tag que falla individualmente con el PLC sano se guarda con `value = NULL` y
 `status = 2`: solo se corta esa serie, sin afectar a la escala de las demás.
 
----
-
 ## Navegación temporal
 
-No hay botón "Pausar". El estado de la vista es uno solo:
-
-```
-{ desde, hasta, siguiendo }
-```
-
-Cualquier interacción con el gráfico apaga `siguiendo`, y el botón **LIVE** es la
-única forma de volver a encenderlo (haciendo backfill desde la base, sin dejar
-hueco).
+No hay botón "Pausar". El estado de la vista es uno solo: `{ desde, hasta,
+siguiendo }`. Cualquier interacción apaga `siguiendo`, y **LIVE** es la única
+forma de reencenderlo (con backfill desde la base).
 
 | Acción | Efecto |
 |---|---|
 | Arrastrar el gráfico | Desplazar en el tiempo |
 | Rueda | Zoom sobre el instante bajo el cursor |
 | Shift + arrastre | Zoom a la selección |
-| Doble clic | Volver al ancho de ventana nombrado |
-| `←` / `→` | Desplazar media ventana · con Shift, una entera |
+| Doble clic · `[⟲]` | Volver al ancho de ventana nombrado |
+| `←` / `→` · `[‹]` `[›]` | Desplazar media ventana · con Shift, una entera |
 | `Inicio` | Volver a LIVE |
-| `T` | Plegar / desplegar la tabla |
-| `F` | Gráfico a pantalla completa |
-| `[‹]` `[›]` | Desplazar media ventana |
+| `T` / `F` | Plegar la tabla / gráfico a pantalla completa |
+| `[📅 Rango]` · `[⇩ CSV]` | Ir a un rango concreto · descargar la ventana visible |
+| Asa bajo el gráfico | Arrastrar redimensiona la tabla · clic la pliega |
 
-Los botones y las flechas mueven lo mismo a propósito: son la misma acción, y
-tener dos magnitudes distintas hacía impredecible cuánto te desplazabas.
+Botones y flechas mueven lo mismo a propósito. **El rango visible va en la URL**:
+F5 restaura la vista exacta, las flechas del navegador funcionan y el enlace es
+compartible; la configuración de las series vive en la base. Con la vista quieta
+se precargan las ventanas contiguas, y lo pedido y aún no recibido se dibuja como
+banda gris **Cargando…**, nunca con el rojo de los huecos: "todavía no lo tengo"
+y "aquí no hubo dato" no se confunden.
 
-**El rango visible va en la URL**, así que F5 restaura la vista exacta, las
-flechas atrás/adelante del navegador funcionan y el enlace es compartible. La
-configuración de las series (color, eje, escala) vive en la base de datos.
+### Resolución y ventanas
 
-Al quedarse la vista quieta se precargan en segundo plano la ventana anterior y
-la siguiente, de modo que la pulsación siguiente de `‹` se pinta desde memoria y
-no desde la red. Lo que sí está pedido y aún no ha llegado se dibuja como una
-banda gris **Cargando…**, nunca en blanco y nunca con el rojo de los huecos:
-"todavía no lo tengo" y "aquí no hubo dato" no se pueden confundir.
+El servidor elige capa y bucket según cuántos puntos caben en el ancho del
+gráfico, no por umbrales fijos, y respeta un presupuesto de filas por consulta:
+30 días con 20 series que fuesen a escanear ~860 k filas suben al agregado
+horario —un pan instantáneo con 720 puntos vale más que uno lento con 1440—. Al
+alejar se dibuja la **banda mín-máx** detrás del promedio, para que un pico de
+dos segundos siga siendo visible en una ventana de un mes.
 
-### Resolución
-
-El servidor elige capa y bucket a partir de cuántos puntos caben en el ancho del
-gráfico, no de umbrales fijos, y respeta un presupuesto de filas leídas por
-consulta: si una ventana de 30 días con 20 series fuese a escanear ~860 k filas,
-sube al agregado horario. Un pan instantáneo con 720 puntos vale más que uno
-lento con 1440.
-
-Al alejar el zoom se dibuja la **banda mín-máx** del intervalo detrás de la línea
-de promedio, para que un pico de dos segundos siga siendo visible en una ventana
-de un mes.
-
-### Ventanas
-
-`30s`, `15m`, `1h`, `8h`, `1d`, `2w`, `1M`. Minúscula `m` es minutos, mayúscula
-`M` es meses (30 días). El parser vive **solo en el servidor**.
-
----
+El campo de ancho acepta `<número><s|m|h|d|w|M>`: `30s`, `15m`, `1h`, `1d`, `2w`,
+`1M`. Minúscula `m` es minutos, mayúscula `M` es meses (30 días). El parser vive
+**solo en el servidor** (`src/timeparse.py`). Como **botones de preset** hay
+cuatro: `5m`, `1h`, `8h`, `1d`; cualquier otro ancho se teclea.
 
 ## Configuración de series
-
-Cada fila de la tabla bajo el gráfico:
 
 | Campo | Para qué |
 |---|---|
@@ -163,51 +131,35 @@ Cada fila de la tabla bajo el gráfico:
 | Escala | `auto` o `manual` con Y mín / Y máx |
 | Unidad / Decimales | Formato en eje, cursor y CSV |
 | Interpolación | Línea o escalón (los digitales siempre escalón) |
-| Grosor | 1–4 px |
-| Agregación | Qué representa cada bucket al alejar: promedio, mín, máx o último |
+| Grosor | 1–4 px (el `CHECK` de la tabla admite 5; la UI ofrece 4) |
+| Agregación | Promedio, mín, máx o último. **Todavía no surte efecto** ⚠ |
 
 Columnas de solo lectura calculadas en el navegador sobre la ventana visible:
-**Cursor** (valor bajo el crosshair), **Último**, **Mín**, **Máx**, **Prom**.
+**Cursor**, **Último**, **Mín**, **Máx**, **Prom**.
 
-### Lectura del crosshair
+⚠ **Agregación:** se persiste en `gallery_series.agg`, pero hoy no la lee nadie —
+`/api/history` devuelve siempre `avg`/`min`/`max` y el gráfico traza el promedio.
+Los caggs ya materializan `last`: implementarla es pasar `agg` al API y elegir
+columna en `repo_history`.
 
-Junto al cursor aparece un recuadro con el instante y el valor de cada serie, y
-viaja con él. La versión anterior dejaba esa lectura anclada abajo al centro del
-gráfico, así que inspeccionar un punto obligaba a apartar la vista de él.
-
-El recuadro se autolimita —un máximo de 12 series, y el resto se cuenta como
-`+N más en la tabla`— porque el área de trazo sigue siendo lo que hay que
-maximizar: una galería de 30 tags taparía justo el gráfico que se quiere leer.
-La tabla inferior no cambia de papel: es la lectura completa y persistente, y la
-única cuando la mano no está sobre el gráfico.
+Junto al cursor viaja un recuadro con el instante y el valor de cada serie,
+autolimitado a 12 (`+N más en la tabla`) porque el área de trazo es lo que hay
+que maximizar; la tabla inferior es la lectura completa.
 
 ### Qué series comparten escala
 
-Compartir escala es compartir marco de referencia, y eso exige estar de acuerdo
-en los límites. Con `Eje = auto` la regla completa es: **misma unidad *y* mismos
-límites**. Dos series en `%` con rangos manuales 0–10 y 0–100 no pueden convivir
-en un eje —una de las dos acabaría dibujada fuera del área y desaparecería del
-gráfico—, así que cada una recibe el suyo. Si los límites coinciden, o si ambas
-autoescalan, siguen compartiendo eje: son comparables y no hay motivo para
-separarlas.
+Compartir escala es compartir marco de referencia, y eso exige acuerdo sobre los
+límites. Con `Eje = auto` la regla es **misma unidad *y* mismos límites**: dos
+series en `%` con rangos 0–10 y 0–100 no caben en un eje —una quedaría fuera del
+área y desaparecería—, así que cada una recibe el suyo. Un grupo **explícito** es
+una orden y se respeta aunque no coincidan: la escala toma la unión, ensanchada
+si hace falta para los datos de las series en `auto`.
 
-Un grupo de eje **explícito** es una orden y se respeta aunque los límites no
-coincidan: ahí la escala toma la unión de los rangos manuales, ensanchada si
-hace falta para que quepan los datos de las series en `auto`.
-
-El invariante, en cualquier combinación: ninguna configuración puede dejar una
-serie fuera del área de trazo. La regla vive en `src/static/js/scales.js` y está
-cubierta por `tests/frontend.test.js`.
-
-Solo se dibujan dos reglas numéricas, izquierda y derecha; los demás grupos
-conservan su escala aunque no muestren regla, porque el ancho del trazo vale más
-que una tercera columna de números. Los valores exactos están en la tabla.
-
-Los tags marcados como `digital` se dibujan en carriles al pie del área de trazo,
-nunca en el eje analógico: un booleano 0/1 aplastaría la escala de una
-temperatura.
-
----
+El invariante: **ninguna configuración puede dejar una serie fuera del área de
+trazo.** Vive en `src/static/js/scales.js`, cubierto por `tests/frontend.test.js`.
+Solo se dibujan dos reglas numéricas —el ancho del trazo vale más que una tercera
+columna de números—, aunque los demás grupos conservan su escala. Los `digital`
+van en carriles al pie: un booleano 0/1 aplastaría la escala de una temperatura.
 
 ## API
 
@@ -215,164 +167,323 @@ temperatura.
 |---|---|---|
 | GET | `/api/health` | `worker_alive`, `plc_connected`, jitter p95, cola, gap abierto |
 | GET | `/api/live/snapshot` | Últimos valores en memoria |
-| GET/POST/PATCH/DELETE | `/api/tags` | `DELETE` desactiva; `?purge=true` borra también el histórico |
-| GET | `/api/history` | `tags`, `window` o `from`/`to`, `max_points` |
+| GET/POST/PATCH/DELETE | `/api/tags` | `DELETE` desactiva; `?purge=true` borra el histórico |
+| GET | `/api/history` | `tags`, `window` o `from`/`to`, `max_points`. Máx. 50 tags |
 | GET | `/api/history/window` | Valida un token de ventana |
 | GET/POST/PATCH/DELETE | `/api/galleries` | Sin límite duro (`MAX_GALLERIES=0`) |
-| PUT | `/api/galleries/{id}/series` | Reemplazo atómico |
+| PUT | `/api/galleries/{id}/series` | Reemplazo atómico, hasta 30 series |
 | GET | `/api/export.csv` | Ventana visible en la resolución que se está viendo |
-| GET/POST/PATCH/DELETE | `/api/forms/operation` | Formulario de operación; `?force=true` corrige fuera de plazo |
-| GET | `/api/forms/operation.csv` | Registros del día, con el perfil aplanado a 10 columnas |
-| WS | `/ws/live` | Ticks columnares + eventos `gap_open` / `gap_close` |
+| WS | `/ws/live` | Ticks columnares + `gap_open`/`gap_close`. Máx. 50 tags |
 
----
+Los topes no son arbitrarios: 50 tags acotan el escaneo junto con
+`MAX_SCAN_ROWS`, y 30 series es donde el gráfico deja de ser legible antes que
+lento.
 
-## Formularios
+## Cómo configurar un tag
 
-Lo que el PLC no puede saber y alguien tiene que escribir. En `/forms` hay tres:
-**Operación** (implementado), **Laboratorio** e **Ingeniería** (pendientes).
+Modbus no tiene tags con nombre ni tipo en el cable: **todo lo declara el
+catálogo**. Un tag no se lee hasta que existe en la tabla `tags` y está activo,
+y el worker recarga el catálogo cada ~15 s, así que **no hay que reiniciar nada**
+tras darlo de alta.
 
-El de operación se llena bobina a bobina desde el panel de planta: la fila de columnas
-está siempre visible y lista, sin ventanas emergentes, porque sustituye a una hoja de
-papel. Guarda referencia, consecutivo, horas, velocidad, el perfil de peso de 10 zonas,
-peso base, peso de bobina, rupturas y tipo.
+Se hace en <http://localhost:8000/tags>, o por el API:
 
-Tres decisiones que conviene conocer antes de tocarlo:
+```bash
+curl -X POST localhost:8000/api/tags -H 'Content-Type: application/json' \
+  -d '{"name":"Temp_Zona1","area":"holding","address":4096,"data_type":"int16","scale":0.1}'
+```
 
-- **La referencia admite valores fuera de lista.** Las conocidas están en `REFERENCES`
-  (`src/api/forms.py`) —K40, K42, K45, K48, K50, K60, K90, K100, K111— y el formulario las
-  pide de ahí por el API, no las repite en el HTML. La opción «Otro…» deja teclear una
-  nueva, así que **no hay `CHECK` contra esa lista**; el valor se normaliza a mayúsculas
-  para que `k40` y `K40` no cuenten como dos referencias distintas. En la tabla la columna
-  es *nullable*: cuando se añadió ya había bobinas registradas a mano, y `NULL` distingue
-  «no se registró» de un valor inventado. El formulario sí la exige al crear.
+### Los campos
 
-- **Se guardan instantes reales, no solo la hora.** La UI pide `HH:MM` y el servidor los
-  compone con la fecha del día en `TZ`; si la hora de fin no es posterior a la de inicio,
-  la bobina cruzó la medianoche y el fin cae al día siguiente. Guardar `TIMESTAMPTZ` es lo
-  que permite cruzar cada bobina con el histórico de tendencias por rango de tiempo.
-- **La corrección es por plazo, no por rol.** El operador tiene `OP_EDIT_WINDOW_MIN`
-  minutos (30 por defecto) contados desde `created_at` —editar no reinicia el reloj—; luego
-  la fila queda bloqueada. `?force=true` la desbloquea y queda registrado en
-  `op_record_revisions` como `source='ingenieria'`. **No es un control de acceso**: mientras
-  no haya usuarios es solo una convención, y cuando los haya debe pasar a ser una
-  comprobación de permiso.
+Solo **Nombre** y **Dirección** son obligatorios; el resto tiene un valor por
+defecto sensato. En el formulario, los cuatro últimos van plegados bajo
+«Escala, orden de palabra y esclavo».
 
----
+| Campo | Por defecto | Qué es |
+|---|---|---|
+| **Nombre** | — | Identificador único. Sale en la leyenda, la tabla y las cabeceras del CSV. Es un nombre tuyo, no una dirección |
+| **Dirección** | — | El registro o bit a leer, **0–65535, base 0** (ver abajo) |
+| **Área** | `holding` | `holding` (4x, lectura/escritura), `input` (3x, solo lectura), `coil` (0x, bit R/W), `discrete` (1x, bit solo lectura) |
+| **Tipo** | `int16` | Cómo interpretar lo leído: `int16`, `uint16`, `int32`, `uint32`, `float32`, `bit`. Los de 32 bits ocupan **dos** registros |
+| **Etiqueta** | — | Nombre legible que se muestra en los gráficos. Si falta, se usa el Nombre |
+| **Unidad** | — | `°C`, `bar`, `%`… Se usa en el eje, el cursor y el CSV, y agrupa escalas con `Eje = auto` |
+| **Escala** | `1` | `valor = crudo × escala + offset`. No puede ser 0 |
+| **Offset** | `0` | Desplazamiento tras la escala |
+| **Orden de palabra** | `big` | Solo afecta a los tipos de 32 bits. `big` = palabra alta primero (ABCD), `little` = palabras intercambiadas (CDAB) |
+| **Esclavo** | `PLC_UNIT_ID` (1) | `unit_id` Modbus. Solo cambia si hay un gateway con varios esclavos detrás |
+| **Naturaleza** | `analog` | Cómo se **dibuja**: `analog`, `digital` o `counter` |
+| **Decimales** | `2` | Decimales al mostrar el valor |
+
+**La escala existe porque el PLC publica enteros**. Una temperatura de 180.5 °C
+viaja como el entero `1805`; con `data_type: int16` y `scale: 0.1` el historiador
+guarda `180.5`, que es lo que hay que archivar. Guardar el crudo obligaría a
+recordar el factor cada vez que alguien mire una tendencia de hace ocho meses.
+
+### Qué número va en «Dirección»
+
+Es la **dirección de protocolo, empezando en 0** — la misma que usan `pymodbus` y
+casi todas las herramientas de diagnóstico. Si tu documentación usa la notación
+clásica de cinco dígitos, resta uno y quita el prefijo:
+
+| La documentación dice | Área | Dirección |
+|---|---|---|
+| `40001` / `4x0001` | `holding` | `0` |
+| `40101` | `holding` | `100` |
+| `30001` / `3x0001` | `input` | `0` |
+| `00001` / `0x0001` | `coil` | `0` |
+
+En un **Delta AS-200** con el mapa Modbus estándar, la notación de dispositivo se
+traduce así (mientras la traducción automática no exista, se hace a mano):
+
+| Dispositivo Delta | Área | Dirección | Estado |
+|---|---|---|---|
+| `D100` (registro de datos) | `holding` | `100` | ✅ Comprobado contra el AS-200 |
+| `M114` (relé auxiliar) | `coil` | `114` | ✅ Comprobado contra el AS-200 |
+| `X`, `Y`, `S`, `T`, `C`, `SR`, `HC`, `E` | — | — | ⚠️ Sin confirmar: verifica en tu manual |
+
+> Un `float32` en `D70` ocupa `D70` y `D71`: se da de alta **una sola vez** en la
+> dirección `70` con `data_type: float32`, no dos tags.
+
+### «Tipo» y «Naturaleza» no son lo mismo
+
+Es la confusión más fácil de cometer y no da ningún error:
+
+- **Tipo** (`data_type`) decide **cómo se decodifican los bytes**. Es del cable.
+- **Naturaleza** (`kind`) decide **cómo se dibuja**. Es de la pantalla.
+
+Un bit leído de una bobina con la Naturaleza por defecto (`analog`) se dibuja en
+el eje analógico, y un 0/1 al lado de una temperatura de 180 °C aplasta la escala
+de las dos. **A un `data_type: bit` ponle siempre `kind: digital`**: así va a un
+carril al pie del gráfico, con interpolación en escalón, sin tocar la escala de
+nadie.
+
+### Ejemplos
+
+**Booleano** — una bomba en marcha, relé `M100` del Delta:
+
+| Campo | Valor |
+|---|---|
+| Nombre / Etiqueta | `Bomba1_ON` / `Bomba 1 en marcha` |
+| Área · Dirección | `coil` · `100` |
+| Tipo · Naturaleza | `bit` · **`digital`** |
+
+```bash
+curl -X POST localhost:8000/api/tags -H 'Content-Type: application/json' \
+  -d '{"name":"Bomba1_ON","label":"Bomba 1 en marcha","area":"coil","address":100,
+       "data_type":"bit","kind":"digital"}'
+```
+
+**Entero escalado** — una temperatura que el PLC publica ×10 en `D4096`:
+
+| Campo | Valor |
+|---|---|
+| Nombre / Etiqueta | `Temp_Zona1` / `Temperatura zona 1` |
+| Área · Dirección | `holding` · `4096` |
+| Tipo · Unidad | `int16` · `°C` |
+| Escala · Decimales | `0.1` · `1` |
+
+```bash
+curl -X POST localhost:8000/api/tags -H 'Content-Type: application/json' \
+  -d '{"name":"Temp_Zona1","label":"Temperatura zona 1","area":"holding","address":4096,
+       "data_type":"int16","unit":"°C","scale":0.1,"decimals":1}'
+```
+
+Con `1805` en el registro, el historiador guarda `180.5`.
+
+**Flotante** — un caudal en `D70`+`D71`, ya en unidades de ingeniería:
+
+| Campo | Valor |
+|---|---|
+| Nombre / Etiqueta | `Caudal` / `Caudal de entrada` |
+| Área · Dirección | `holding` · `70` |
+| Tipo · Unidad | `float32` · `l/min` |
+| Orden de palabra | `big`, o `little` si sale un número absurdo |
+| Escala | `1` — el flotante ya viene escalado |
+
+```bash
+curl -X POST localhost:8000/api/tags -H 'Content-Type: application/json' \
+  -d '{"name":"Caudal","label":"Caudal de entrada","area":"holding","address":70,
+       "data_type":"float32","unit":"l/min","word_order":"big"}'
+```
+
+Si el valor sale disparatado, casi siempre es el orden de palabra: cambia a
+`little` y vuelve a mirar. Leído del revés, un `100.0` se ve como `2.4e-41` y un
+`123.45` como `-2.7e+23` — inconfundibles. Pero **no siempre canta**: un `1450.0`
+del revés da `2.0042`, que parece una lectura perfectamente razonable. Los dos
+órdenes son válidos y **ninguno da error**; solo uno da el número correcto, y por
+eso hay que cotejarlo.
+
+### Comprobar que quedó bien
+
+La página de Tags muestra el último valor y su calidad, refrescados cada 2 s:
+
+| Lo que ves | Qué significa |
+|---|---|
+| Un valor y **Good** | Se está leyendo bien |
+| **Sin leer** | Aún no ha pasado un ciclo, o el tag está inactivo |
+| **TagError** | El esclavo rechazó el bloque de esa dirección — revísala |
+| Todos en blanco y **PLC desconectado** arriba | No es el tag: es la comunicación |
+
+> **Coteja contra ISPSoft antes de dar de alta una tanda.** Un orden de palabra
+> invertido o una dirección desplazada **no dan error**: dan un número plausible
+> y falso, que es el peor fallo posible en un historiador. La app comprueba que
+> el área y el tipo sean coherentes, pero no puede saber si el registro 4096 es
+> la temperatura que crees.
+
+Para probar sin el PLC delante, `scripts/modbus_sim.py` levanta un esclavo falso
+con el mismo mapa que siembra `seed.py` (`holding 4096+` analógicos ×10,
+`holding 4192+` flotantes, `coil 0+` digitales).
+
+### Por qué hay un agrupador de bloques
+
+Una petición Modbus lee un **rango contiguo**: no existe la lectura dispersa que
+CIP sí permitía. Con ~100 tags repartidos por el mapa de memoria, pedirlos uno a
+uno serían 100 idas y vueltas TCP por ciclo, imposible a 1 Hz.
+
+`plan_blocks` (en `src/plc_client.py`) los agrupa en el mínimo número de
+peticiones, respetando los topes del protocolo —125 registros en FC03/FC04, 2000
+bits en FC01/FC02— y fusionando huecos de hasta 8 registros: leer unos registros
+que nadie usa sale mucho más barato que una segunda ida y vuelta. El plan se
+calcula una vez por catálogo, no en cada ciclo.
+
+### Errores: por bloque, no por tag
+
+| Situación | Resultado |
+|---|---|
+| Socket caído o timeout | Se abre un **gap**: banda roja «SIN DATO», ninguna fila insertada |
+| El esclavo rechaza un bloque (dirección ilegal) | Los tags **de ese bloque** van con `NULL` y `status = 2` |
+| Bloque correcto | Valor y `status = 0` |
+
+Que el error sea por bloque es del protocolo, no una decisión: Modbus responde
+por petición, no por variable, así que una dirección mal tecleada arrastra a sus
+vecinas. Aparecen en la página de Tags como «TagError», que es la pista para
+encontrarla.
+
+En el log solo se avisa de los **cambios de estado** —una línea al empezar a ser
+rechazado, nombrando los tags afectados, y otra al recuperarse—, nunca una por
+ciclo: a 1 Hz, un tag mal configurado que nadie corrija enterraría el resto del
+log en unas horas.
 
 ## Arquitectura del worker
 
-Tres hilos desacoplados por colas acotadas (drop-oldest):
+Tres responsabilidades desacopladas por colas acotadas (drop-oldest):
 
 1. **Acquirer** — malla `monotonic()` sin deriva, timestamp tomado antes del
-   read, multi-read CIP en una llamada. **Nunca toca la base de datos.**
+   read, lectura agrupada en bloques contiguos. **Nunca toca la base de datos.**
 2. **Writer** — único con acceso a Postgres. Lotes por `COPY`, gestión de
    `acquisition_gaps` y recarga del catálogo de tags.
-3. **Broadcaster** — reparte a los WebSockets, con cola propia por conexión.
+3. **Broadcaster** (`hub`) — reparte a los WebSockets, con cola por conexión.
 
-Separar la escritura de la adquisición es lo que impide que un checkpoint de
-Postgres o un job de compresión desvíe la cadencia de lectura del PLC.
+Los dos primeros son **hilos** de verdad (`src/__main__.py`); el broadcaster no:
+es un puente al event loop de asyncio vía `call_soon_threadsafe`, porque los
+WebSockets viven en el loop de uvicorn y un tercer hilo obligaría a sincronizar
+lo que asyncio ya serializa. Separar escritura de adquisición es lo que impide
+que un checkpoint o un job de compresión desvíe la cadencia de lectura del PLC.
 
-`tags.last_value` no existe a propósito: actualizar el catálogo 100 veces por
-segundo generaría bloat permanente. El estado vivo está en memoria y se expone
-por `/api/health` y `/api/live/snapshot`.
-
----
+`tags.last_value` no existe a propósito: 100 UPDATE/s sobre una tabla pequeña
+generaría bloat permanente. El estado vivo vive en memoria, expuesto por
+`/api/health` y `/api/live/snapshot`.
 
 ## Operación
 
-- **Sincroniza la hora por NTP.** En un historiador, un reloj desviado corrompe
-  el histórico en silencio. Todo se almacena en UTC; la presentación es
-  `America/Bogotá`.
+- **Sincroniza la hora por NTP.** Un reloj desviado corrompe el histórico en
+  silencio. Todo se almacena en UTC; la presentación es `America/Bogotá`.
 - **Sin autenticación.** Pensado para LAN industrial aislada. No lo expongas a
   internet sin un proxy inverso con auth delante.
-- **Backup diario automático** a las 06:00 (America/Bogota) vía systemd
-  (`adanvi-backup.timer` → `scripts/backup_database.sh`): `pg_dump` completo en
-  formato custom con el rol de solo lectura `adanvi_ro`, validado con
-  `pg_restore --list` y checksum antes de publicar. Conserva los 3 dumps más
-  recientes en `~/backups/adanvi` y elimina el cuarto solo si el nuevo pasó la
-  validación. Los roles globales (`globals`) no se respaldan con `adanvi_ro`;
-  conservar aparte el último `pg_dumpall --globals-only` hecho con el admin.
-  Unidades en `deploy/systemd/`; instalación:
-  `sudo cp deploy/systemd/adanvi-backup.{service,timer} /etc/systemd/system/ &&
-  sudo systemctl daemon-reload && sudo systemctl enable --now adanvi-backup.timer`.
+
+### Backup diario
+
+A las 06:00 vía systemd (`adanvi-backup.timer` → `scripts/backup_database.sh`):
+`pg_dump` en formato custom con el rol de solo lectura `adanvi_ro`, validado con
+`pg_restore --list` y checksum **antes** de publicar y de tocar los dumps viejos.
+Junto a cada uno queda un `.manifest` (fecha, tamaño, versión, sha256) y se
+conservan los 3 más recientes. Los roles globales no los cubre `adanvi_ro`:
+guardar aparte el último `pg_dumpall --globals-only` del admin.
+
+```bash
+sudo cp deploy/systemd/adanvi-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now adanvi-backup.timer
+```
+
+**Las rutas están fijadas al despliegue de referencia**, usuario `emolog`:
+destino `/home/emolog/backups/adanvi`, `.service` apuntando a
+`/home/emolog/adanvi/scripts/`. En otra máquina hay que exportar
+`ADANVI_BACKUP_DIR` y editar `ExecStart` y `ReadWritePaths`.
+
+### Agujeros en los agregados continuos
+
+Las policies refrescan con `start_offset => 30 minutes`: si el planificador de
+jobs se detiene más de media hora, lo que no llegó a materializarse se queda así
+para siempre. El síntoma es una tendencia que salta horas en las ventanas largas
+(leen los agregados) mientras las cortas (leen el crudo) están bien.
+
+```bash
+uv run python scripts/refresh_caggs.py --from '2026-08-16 15:00' --to '2026-08-17 13:00' --dry-run
+```
+
+**Leer los avisos del script antes de usarlo:** refrescar un tramo sin filas en
+`readings` **borra** sus buckets materializados, y los agregados sobreviven a la
+retención del crudo justamente porque nadie los recalcula. El rango se acota al
+crudo existente; ese tope es la única barrera.
 
 ### Restauración completa desde `bck/`
 
-Para reconstruir la base en un volumen nuevo, el orden de TimescaleDB es
-importante. Ejecutar esto detiene la aplicación y reemplaza la base `adanvi`:
+El orden de TimescaleDB importa. Esto detiene la app y reemplaza la base:
 
 ```bash
-docker-compose up -d db
-docker-compose stop adanvi
+docker-compose up -d db && docker-compose stop adanvi
 
-# El rol adanvi ya existe porque lo crea Docker; el "already exists" de esa
-# línea es esperado y las sentencias ALTER ROLE siguientes sí se aplican.
+# El rol adanvi ya existe porque lo crea Docker; ese "already exists" es
+# esperado y las sentencias ALTER ROLE siguientes sí se aplican.
 docker-compose exec -T db psql -X -U adanvi -d postgres < bck/globals_2026-08-18_2142.sql
 
-docker-compose exec -T db psql -X -U adanvi -d postgres \
-  -c "DROP DATABASE adanvi WITH (FORCE)"
-docker-compose exec -T db psql -X -U adanvi -d postgres \
-  -c "CREATE DATABASE adanvi OWNER adanvi"
-docker-compose exec -T db psql -X -U adanvi -d adanvi \
-  -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
-docker-compose exec -T db psql -X -U adanvi -d adanvi \
-  -c "SELECT timescaledb_pre_restore()"
+docker-compose exec -T db psql -X -U adanvi -d postgres -c "DROP DATABASE adanvi WITH (FORCE)"
+docker-compose exec -T db psql -X -U adanvi -d postgres -c "CREATE DATABASE adanvi OWNER adanvi"
+docker-compose exec -T db psql -X -U adanvi -d adanvi -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+docker-compose exec -T db psql -X -U adanvi -d adanvi -c "SELECT timescaledb_pre_restore()"
 docker-compose exec -T db pg_restore --no-owner --exit-on-error \
   -U adanvi -d adanvi < bck/adanvi_2026-08-20_0600.dump
-docker-compose exec -T db psql -X -U adanvi -d adanvi \
-  -c "SELECT timescaledb_post_restore()"
+docker-compose exec -T db psql -X -U adanvi -d adanvi -c "SELECT timescaledb_post_restore()"
 
-# Restaura los permisos del usuario externo de solo lectura.
-uv run python scripts/grant_ro.py
+uv run python scripts/grant_ro.py     # permisos del usuario de solo lectura
 docker-compose up -d
 ```
 
-El dump `*.dump` está excluido del versionado por `.gitignore`; para recuperar
-desde un clon hay que conservar y copiar `bck/` junto al proyecto. El archivo
-`globals_*.sql` contiene hashes de credenciales y debe tratarse como secreto.
+Los `*.dump` están excluidos por `.gitignore`: para recuperar desde un clon hay
+que copiar `bck/` junto al proyecto. `globals_*.sql` contiene hashes de
+credenciales y debe tratarse como secreto.
 
 ### Acceso externo a la base (pgAdmin, DBeaver, notebooks)
 
-Postgres se publica **solo en el loopback** del host (`127.0.0.1:5430` en
-`docker-compose.yml`), a propósito: la LAN de planta no debe poder hablar con la
-base. Para llegar desde otro equipo se usa el tailnet, con `tailscaled` haciendo
-de puerta:
+Postgres se publica **solo en el loopback** (`127.0.0.1:5430`), a propósito: la
+LAN de planta no debe poder hablar con la base. Desde otro equipo se llega por el
+tailnet:
 
 ```bash
 sudo tailscale serve --bg --tcp 5430 tcp://127.0.0.1:5430
-```
-
-La configuración persiste entre reinicios, y el bind de Docker no cambia. Se
-prefirió esto a publicar el puerto en la IP de Tailscale porque `docker` y
-`tailscaled` no tienen orden garantizado en systemd: en un arranque en frío el
-contenedor podría fallar el bind contra una interfaz que aún no existe.
-
-Después, habilitar el rol de solo lectura (existe desde la migración 004, pero
-`NOLOGIN` y sin contraseña):
-
-```bash
 uv run python scripts/grant_ro.py     # lee ADANVI_RO_PASSWORD del .env
 ```
 
-Conexión desde la otra máquina: host = la IP de Tailscale del servidor, puerto
-`5432`, base `adanvi`, usuario **`adanvi_ro`**.
+Se prefirió `serve` a publicar el puerto en la IP de Tailscale porque `docker` y
+`tailscaled` no tienen orden garantizado en systemd: en un arranque en frío el
+contenedor podría fallar el bind contra una interfaz que aún no existe.
 
-`adanvi` es superusuario y se reserva para mantenimiento. Un `DELETE FROM
-readings` mal escrito desde un cliente gráfico destruye el histórico de forma
-irrecuperable, que es justo lo único que esta app existe para custodiar.
+Conexión: host = la IP de Tailscale del servidor, puerto **`5430`** (el mismo que
+escucha en el loopback, no el 5432 interno), base `adanvi`, usuario
+**`adanvi_ro`** —existe desde la migración 004, pero `NOLOGIN` hasta que
+`grant_ro.py` le pone contraseña—. `adanvi` es superusuario y se reserva para
+mantenimiento: un `DELETE FROM readings` mal escrito desde un cliente gráfico
+destruye el histórico de forma irrecuperable, que es lo único que esta app existe
+para custodiar.
 
-**`pg_hba.conf` no sirve como allowlist por IP aquí.** La conexión llega por
-`tailscaled → docker-proxy → contenedor`, así que Postgres ve como origen la
-gateway del bridge (`172.x`) y no la IP real del cliente. El control de acceso lo
-dan Tailscale (WireGuard + ACLs del tailnet) y el rol de solo lectura — no hay una
-segunda barrera por IP, conviene no suponerla.
-
-El mismo rol `adanvi_ro` es el gancho previsto para el asistente de consultas en
-lenguaje natural de v2.
+**`pg_hba.conf` no sirve como allowlist por IP aquí:** la conexión llega por
+`tailscaled → docker-proxy → contenedor`, así que Postgres ve la gateway del
+bridge (`172.x`), no al cliente. El control de acceso lo dan Tailscale (WireGuard
++ ACLs) y el rol de solo lectura; no hay segunda barrera, no la supongas.
 
 ## Fuera de alcance en v1
 
 Asistente MCP/LLM, autenticación y RBAC, escritura de setpoints al PLC, fórmulas
-de proceso, alta disponibilidad, tema claro, compresión por excepción
-(deadband), anotaciones de evento.
+de proceso, alta disponibilidad, tema claro, compresión por excepción (deadband),
+anotaciones de evento, notación de dispositivo Delta (`D100`, `M50`) sobre el
+direccionamiento Modbus.

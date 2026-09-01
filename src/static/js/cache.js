@@ -47,14 +47,6 @@ export class HistoryCache {
     this.prefetchController = null;
   }
 
-  clear() {
-    this.entries.clear();
-    this.lastSpan = null;
-    this.lastBucket = null;
-    this.abort();
-    this.abortPrefetch();
-  }
-
   abort() {
     this.controller?.abort();
     this.controller = null;

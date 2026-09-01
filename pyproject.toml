@@ -1,13 +1,13 @@
 [project]
 name = "adanvi"
 version = "1.0.0"
-description = "ADANVI by emolog — historiador de tendencias para PLC Allen-Bradley"
+description = "ADANVI by emolog — historiador de tendencias para PLC Delta AS-200"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "psycopg[binary,pool]>=3.2",
-    "pycomm3>=1.2.14",
+    "pymodbus>=3.6",
     "python-dotenv>=1.0",
 ]
 

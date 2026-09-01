@@ -7,7 +7,7 @@ import { fmtTime } from "./format.js";
 
 const HEALTH_INTERVAL_MS = 3000;
 
-export function mountTopbar(active, { lockNav = false } = {}) {
+export function mountTopbar(active) {
   const bar = document.querySelector(".topbar");
   if (!bar) return;
   bar.innerHTML = `
@@ -16,28 +16,12 @@ export function mountTopbar(active, { lockNav = false } = {}) {
       <a href="/" ${active === "home" ? 'aria-current="page"' : ""}>Inicio</a>
       <a href="/tags" ${active === "tags" ? 'aria-current="page"' : ""}>Tags</a>
       <a href="/galleries" ${active === "galleries" ? 'aria-current="page"' : ""}>Galerías</a>
-      <a href="/forms" ${active === "forms" ? 'aria-current="page"' : ""}>Formularios</a>
     </nav>
     <div class="topbar-stats">
       <span class="stat" id="stat-tags"></span>
       <span class="stat" id="stat-cycle"></span>
       <span class="stat" id="stat-plc"><span class="dot"></span><span>PLC —</span></span>
     </div>`;
-
-  // TEMPORAL — bloqueo de navegacion en la pantalla de captura.
-  // Para quitarlo: borrar este bloque, el parametro lockNav, su uso en
-  // form-operation.js y la regla .nav-locked de app.css.
-  if (lockNav) {
-    bar.classList.add("nav-locked");
-    for (const link of bar.querySelectorAll(".brand, .nav a")) {
-      // Sin href un <a> deja de ser enlace: no navega con clic, ni con Enter,
-      // ni con clic central, ni ofrece "abrir en pestana nueva". Ademas sale
-      // solo del orden de tabulacion, asi que el foco no cae en un enlace muerto.
-      link.removeAttribute("href");
-      link.setAttribute("aria-disabled", "true");
-      link.title = "Navegación deshabilitada mientras se captura producción";
-    }
-  }
 
   startHealthPolling();
 }
@@ -88,8 +72,4 @@ function renderHealth(health) {
     ? `<b>${fmtTime(Date.parse(health.last_cycle_ts) / 1000)}</b>`
     : "";
   cycle.title = `Jitter de ciclo p95: ${health.cycle_jitter_ms_p95} ms`;
-}
-
-export function onHealth(callback) {
-  document.addEventListener("adanvi:health", (e) => callback(e.detail));
 }

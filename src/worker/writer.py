@@ -70,7 +70,12 @@ write_q = WriteQueue()
 class Writer(threading.Thread):
     def __init__(self, stop_event: threading.Event) -> None:
         super().__init__(name="adanvi-writer", daemon=True)
-        self._stop = stop_event
+        # `_stop_event`, no `_stop`: `threading.Thread._stop` es un metodo interno
+        # que `join()` invoca a traves de `_wait_for_tstate_lock`. Pisarlo con un
+        # Event hace que `join()` lance TypeError, y como se llama desde el
+        # `finally` de __main__, el apagado se interrumpe ahi: el writer nunca
+        # vacia su lote pendiente y se pierde hasta un segundo de adquisicion.
+        self._stop_event = stop_event
         self._pending: list[tuple] = []
         self._pending_since = 0.0
         self._last_seen_flush = 0.0
@@ -86,7 +91,7 @@ class Writer(threading.Thread):
         pool = open_sync_pool()
         self._reload_tags(pool)
         self._bootstrap_gap_check(pool)
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 item = write_q.get(timeout=0.25)
             except queue.Empty:
@@ -126,8 +131,6 @@ class Writer(threading.Thread):
             self._open_gap(pool, item[1], item[2])
         elif kind == "gap_close":
             self._close_gap(pool, item[1])
-        elif kind == "value_type":
-            self._set_value_type(pool, item[1], item[2])
 
     def _maybe_flush(self, pool) -> None:
         if not self._pending:
@@ -259,22 +262,15 @@ class Writer(threading.Thread):
         self._last_tag_reload = time.monotonic()
         with pool.connection() as conn:
             rows = conn.execute(
-                "SELECT id, name FROM tags WHERE active ORDER BY id"
+                "SELECT id, name, unit_id, area, address, data_type, word_order, "
+                "       scale, value_offset "
+                "FROM tags WHERE active ORDER BY unit_id, area, address"
             ).fetchall()
         previous = {t.id for t in registry.get()}
-        if registry.set([TagDef(tag_id, name) for tag_id, name in rows]):
+        if registry.set([TagDef(*row) for row in rows]):
             current = {t.id for t in registry.get()}
             status.forget_tags(previous - current)
             log.info("catalogo recargado: %d tags activos", len(rows))
-
-    def _set_value_type(self, pool, tag_id: int, value_type: str) -> None:
-        with pool.connection() as conn:
-            conn.execute(
-                "UPDATE tags SET value_type = %s WHERE id = %s AND "
-                "value_type IS DISTINCT FROM %s",
-                (value_type, tag_id, value_type),
-            )
-            conn.commit()
 
     def _maybe_flush_last_seen(self, pool) -> None:
         now = time.monotonic()
