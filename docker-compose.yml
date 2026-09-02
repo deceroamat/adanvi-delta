@@ -1,8 +1,16 @@
 services:
   db:
-    # Version fijada: en un historiador industrial la reproducibilidad del
-    # despliegue vale mas que estar en la ultima.
-    image: timescale/timescaledb:2.29.1-pg16
+    # Version fijada: PG17 en lugar de PG16 porque en riscv64 (Orange Pi RV2)
+    # PGDG no publica binarios .deb, y solo Debian Trixie/PG17 nativo trae el
+    # paquete de desarrollo completo para esta arquitectura. TimescaleDB no
+    # publica manifest para linux/riscv64, asi que compilamos la extension
+    # desde codigo fuente sobre la imagen oficial postgres:17-trixie.
+    # Ver db/Dockerfile para el detalle del build.
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+      args:
+        TS_VERSION: "2.19.3"
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
